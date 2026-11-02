@@ -13,6 +13,7 @@
 #include <Protocol/GraphicsOutput.h>
 #include <Protocol/SimpleFileSystem.h>
 #include "BootArgs.h"
+#include "Fastboot.h"
 #include "BootVideo.h"
 #include "PackedRamdisk.h"
 #include "WindowSize.h"
@@ -547,6 +548,32 @@ AllocateWindow (KERNEL *Kernel, UINT64 WindowSize, EFI_PHYSICAL_ADDRESS *Address
 }
 
 STATIC
+BOOLEAN
+BootArgEnabled (
+  IN CONST CHAR8  *CommandLine,
+  IN CONST CHAR8  *Argument
+  )
+{
+  UINTN        Length;
+  CONST CHAR8  *Cursor;
+
+  Length = AsciiStrLen (Argument);
+  for (Cursor = CommandLine; *Cursor != 0; ) {
+    while (*Cursor == ' ') {
+      Cursor++;
+    }
+    if ((AsciiStrnCmp (Cursor, Argument, Length) == 0) &&
+        ((Cursor[Length] == 0) || (Cursor[Length] == ' '))) {
+      return TRUE;
+    }
+    while ((*Cursor != 0) && (*Cursor != ' ')) {
+      Cursor++;
+    }
+  }
+  return FALSE;
+}
+
+STATIC
 EFI_STATUS
 EFIAPI
 Boot (
@@ -780,6 +807,20 @@ Boot (
   FreePool (Tree); Tree = NULL;
   FreePool (TreePath); TreePath = NULL;
   Root->Close (Root); Root = NULL;
+  if (BootArgEnabled (CommandLine, "fastbootdebug=1")) {
+    Status = DarwinFastbootMode (
+               ArgsAddress,
+               Address + Kernel.Entry - Kernel.Base,
+               Address,
+               Used,
+               Kernel.Base,
+               Kernel.End - Kernel.Base,
+               Video,
+               CommandLine
+               );
+    if (EFI_ERROR (Status)) { goto Fail; }
+    CpuDeadLoop ();
+  }
   Status = GetMap (&Map, &Capacity, &MapSize, &Key, &Stride);
   if (EFI_ERROR (Status)) { goto Fail; }
   Print (L"DARWINBOOT: ARM64 va=0x%lx pa=0x%lx args=0x%lx entry=0x%lx owned=0x%lx\n",

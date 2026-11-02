@@ -14,6 +14,9 @@
   BootVideo.h
   DiagFont.h
   Entry.S
+  Fastboot.c
+  Fastboot.h
+  FastbootEntry.S
 
 [Packages]
   MdePkg/MdePkg.dec
