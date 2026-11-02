@@ -616,6 +616,8 @@ FastbootUsbWait (
     }
     if (Event == QCOM_USB_EVENT_DEVICE_STATE_CHANGE) {
       mUsbConnected = (Data.DeviceState == QCOM_USB_STATE_CONNECTED);
+      Print (L"DARWINBOOT: USB host %s\n",
+             mUsbConnected ? L"connected" : L"disconnected");
       return -1;
     }
     if ((Event == QCOM_USB_EVENT_TRANSFER_NOTIFICATION) &&
@@ -1017,6 +1019,7 @@ FastbootUsbInit (
   mUsb = NULL;
   mUsbConnected = FALSE;
   mUsbReading = FALSE;
+  Print (L"DARWINBOOT: USB init start\n");
   Status = gBS->CreateEventEx (
                   EVT_NOTIFY_SIGNAL,
                   TPL_CALLBACK,
@@ -1029,32 +1032,42 @@ FastbootUsbInit (
     gBS->SignalEvent (mUsbInitEvent);
     gBS->CloseEvent (mUsbInitEvent);
     mUsbInitEvent = NULL;
+    Print (L"DARWINBOOT: USB init event ok\n");
   } else {
     FastbootLog ("USB init event failed: %r\n", Status);
+    Print (L"DARWINBOOT: USB init event failed: %r\n", Status);
   }
   Status = gBS->LocateProtocol (&mQcomUsbGuid, NULL, (VOID **)&mUsb);
   if (EFI_ERROR (Status)) {
     FastbootLog ("Qcom USB protocol unavailable: %r\n", Status);
+    Print (L"DARWINBOOT: Qcom USB protocol unavailable: %r\n", Status);
     return Status;
   }
+  Print (L"DARWINBOOT: USB protocol 0x%lx rev 0x%lx\n",
+         (UINT64)(UINTN)mUsb, mUsb->Revision);
   Status = mUsb->StartEx (&mDescriptors);
   if (EFI_ERROR (Status)) {
     FastbootLog ("USB start_ex failed: %r\n", Status);
+    Print (L"DARWINBOOT: USB start_ex failed: %r\n", Status);
     return Status;
   }
+  Print (L"DARWINBOOT: USB start_ex ok\n");
   Status = mUsb->AllocateTransferBuffer (USB_TRANSFER_SIZE, &mUsbRx);
   if (EFI_ERROR (Status)) {
     FastbootLog ("USB rx buffer failed: %r\n", Status);
+    Print (L"DARWINBOOT: USB rx buffer failed: %r\n", Status);
     return Status;
   }
   Status = mUsb->AllocateTransferBuffer (USB_TRANSFER_SIZE, &mUsbTx);
   if (EFI_ERROR (Status)) {
     FastbootLog ("USB tx buffer failed: %r\n", Status);
+    Print (L"DARWINBOOT: USB tx buffer failed: %r\n", Status);
     return Status;
   }
   mUsbConnected = TRUE;
   FastbootLog ("USB fastboot ready (rx 0x%lx tx 0x%lx)\n",
                (UINT64)(UINTN)mUsbRx, (UINT64)(UINTN)mUsbTx);
+  Print (L"DARWINBOOT: USB fastboot ready\n");
   return EFI_SUCCESS;
 }
 
@@ -1104,6 +1117,7 @@ DarwinFastbootMode (
   if (EFI_ERROR (Status)) {
     return Status;
   }
+  Print (L"DARWINBOOT: entering fastboot command loop\n");
   FastbootPatchKernel (0, FALSE);
   for (;;) {
     FastbootUpdateContext ();
