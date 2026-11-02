@@ -21,9 +21,12 @@
 #define QCOM_USB_DEVICE_PROTOCOL_GUID \
   { 0xd9d9ce48, 0x44b8, 0x4f49, { 0x8e, 0x3e, 0x2a, 0x3b, 0x92, 0x7d, 0xc6, 0xc1 } }
 #define QCOM_USB_INIT_EVENT_GUID \
-  { 0x8d1e5c31, 0xd6a5, 0x4c62, { 0x94, 0x1e, 0x2b, 0x59, 0x3a, 0x8f, 0x77, 0x90 } }
+  { 0x1c0cffce, 0xfc8d, 0x4e44, { 0x8c, 0x78, 0x9c, 0x9e, 0x5b, 0x53, 0x0d, 0x36 } }
 
+#define USB_EP_OUT                0x01
+#define USB_EP_IN                 0x81
 #define USB_CHUNK_SIZE            511
+#define USB_TRANSFER_SIZE         (1024 * 1024)
 #define FASTBOOT_MAX_DOWNLOAD     (64ULL * 1024 * 1024)
 #define FASTBOOT_UEFI_LOG_SIZE    (64 * 1024)
 #define FASTBOOT_KERNEL_LOG_MAX   (1024 * 1024)
@@ -35,123 +38,156 @@
 #define FASTBOOT_PSCI_CPU_ON      0xC4000003ULL
 #define FASTBOOT_PSCI_ALREADY_ON  (-4)
 
-#pragma pack(1)
-typedef struct {
-  UINT8   Length;
-  UINT8   DescriptorType;
-  UINT16  BcdUSB;
-  UINT8   DeviceClass;
-  UINT8   DeviceSubClass;
-  UINT8   DeviceProtocol;
-  UINT8   MaxPacketSize0;
-  UINT16  IdVendor;
-  UINT16  IdProduct;
-  UINT16  BcdDevice;
-  UINT8   StrManufacturer;
-  UINT8   StrProduct;
-  UINT8   StrSerialNumber;
-  UINT8   NumConfigurations;
-} QCOM_USB_DEVICE_DESCRIPTOR;
+enum {
+  QCOM_USB_EVENT_NONE,
+  QCOM_USB_EVENT_DEVICE_STATE_CHANGE,
+  QCOM_USB_EVENT_TRANSFER_NOTIFICATION,
+  QCOM_USB_EVENT_OEM
+};
+
+enum {
+  QCOM_USB_TRANSFER_ACTIVE,
+  QCOM_USB_TRANSFER_COMPLETE_OK,
+  QCOM_USB_TRANSFER_CANCELLED,
+  QCOM_USB_TRANSFER_COMPLETE_ERROR
+};
+
+enum {
+  QCOM_USB_STATE_CONNECTED,
+  QCOM_USB_STATE_DISCONNECTED
+};
+
+typedef union {
+  UINT32  DeviceState;
+  struct {
+    UINT32  Status;
+    UINT8   EndpointIndex;
+    UINT64  BytesCompleted;
+    VOID    *DataBuffer;
+  } Transfer;
+  UINT64  Raw[8];
+} QCOM_USB_DEVICE_EVENT_DATA;
 
 typedef struct {
-  UINT8   Length;
-  UINT8   DescriptorType;
-  UINT16  TotalLength;
-  UINT8   NumInterfaces;
-  UINT8   ConfigurationValue;
-  UINT8   Configuration;
-  UINT8   Attributes;
-  UINT8   MaxPower;
-} QCOM_USB_CONFIG_DESCRIPTOR;
-
-typedef struct {
-  UINT8   Length;
-  UINT8   DescriptorType;
-  UINT8   InterfaceNumber;
-  UINT8   AlternateSetting;
-  UINT8   NumEndpoints;
-  UINT8   InterfaceClass;
-  UINT8   InterfaceSubClass;
-  UINT8   InterfaceProtocol;
-  UINT8   Interface;
-} QCOM_USB_INTERFACE_DESCRIPTOR;
-
-typedef struct {
-  UINT8   Length;
-  UINT8   DescriptorType;
-  UINT8   EndpointAddress;
-  UINT8   Attributes;
-  UINT16  MaxPacketSize;
-  UINT8   Interval;
-} QCOM_USB_ENDPOINT_DESCRIPTOR;
-
-typedef struct {
-  QCOM_USB_DEVICE_DESCRIPTOR       Device;
-  QCOM_USB_CONFIG_DESCRIPTOR       Config;
-  QCOM_USB_INTERFACE_DESCRIPTOR    Interface;
-  QCOM_USB_ENDPOINT_DESCRIPTOR     EndpointIn;
-  QCOM_USB_ENDPOINT_DESCRIPTOR     EndpointOut;
-  UINT8                            String0[4];
-  UINT8                            String1[8];
-  UINT8                            String2[36];
-  UINT8                            String3[16];
+  CONST VOID  *DeviceDescriptor;
+  CONST VOID  **Descriptors;
+  CONST VOID  *SuperSpeedDeviceDescriptor;
+  CONST VOID  **SuperSpeedDescriptors;
+  CONST VOID  *DeviceQualifier;
+  CONST VOID  *Bos;
+  UINT8       StringCount;
+  CONST VOID  **Strings;
 } QCOM_USB_DEVICE_DESCRIPTOR_SET;
-#pragma pack()
 
 typedef
 EFI_STATUS
-(EFIAPI *QCOM_USB_START_EX)(
-  IN VOID                           *This,
-  IN QCOM_USB_DEVICE_DESCRIPTOR_SET *DescriptorSet
-  );
-
-typedef
-EFI_STATUS
-(EFIAPI *QCOM_USB_STOP)(
-  IN VOID  *This
+(EFIAPI *QCOM_USB_SEND)(
+  IN UINT8  Endpoint,
+  IN UINTN  Size,
+  IN VOID   *Buffer
   );
 
 typedef
 EFI_STATUS
 (EFIAPI *QCOM_USB_HANDLE_EVENT)(
-  IN VOID  *This
+  IN  UINT32                      *Event,
+  IN  UINT64                      *Size,
+  OUT QCOM_USB_DEVICE_EVENT_DATA  *Data
   );
 
 typedef
 EFI_STATUS
 (EFIAPI *QCOM_USB_ALLOCATE_TRANSFER_BUFFER)(
-  IN  VOID                  *This,
-  IN  UINTN                 Size,
-  OUT VOID                  **Buffer,
-  OUT EFI_PHYSICAL_ADDRESS  *DmaAddress
+  IN  UINTN  Size,
+  OUT VOID   **Buffer
   );
 
 typedef
 EFI_STATUS
 (EFIAPI *QCOM_USB_FREE_TRANSFER_BUFFER)(
-  IN VOID  *This,
   IN VOID  *Buffer
   );
 
 typedef
 EFI_STATUS
-(EFIAPI *QCOM_USB_SEND)(
-  IN VOID   *This,
-  IN UINT8  Endpoint,
-  IN VOID   *Buffer,
-  IN UINTN  Size
+(EFIAPI *QCOM_USB_START_EX)(
+  IN QCOM_USB_DEVICE_DESCRIPTOR_SET  *DescriptorSet
   );
 
 typedef struct {
-  QCOM_USB_START_EX               StartEx;
-  QCOM_USB_STOP                   Stop;
-  QCOM_USB_HANDLE_EVENT           HandleEvent;
+  UINT64                            Revision;
+  VOID                              *Start;
+  QCOM_USB_SEND                     Send;
+  QCOM_USB_HANDLE_EVENT             HandleEvent;
   QCOM_USB_ALLOCATE_TRANSFER_BUFFER AllocateTransferBuffer;
-  QCOM_USB_FREE_TRANSFER_BUFFER   FreeTransferBuffer;
-  QCOM_USB_SEND                   Send;
-  UINT8                           *StringTable;
-  UINT8                           *DeviceTree;
+  QCOM_USB_FREE_TRANSFER_BUFFER     FreeTransferBuffer;
+  VOID                              *Stop;
+  VOID                              *AbortXfer;
+  VOID                              *SetEndpointStallState;
+  QCOM_USB_START_EX                 StartEx;
 } QCOM_USB_DEVICE_PROTOCOL;
+
+STATIC CONST UINT8 mUsbDeviceDescriptor[18] = {
+  18, 0x01, 0x10, 0x02, 0x00, 0x00, 0x00, 64,
+  0xd1, 0x18, 0x0d, 0xd0, 0x00, 0x01, 1, 2, 3, 1
+};
+STATIC CONST UINT8 mUsbSuperSpeedDeviceDescriptor[18] = {
+  18, 0x01, 0x00, 0x03, 0x00, 0x00, 0x00, 9,
+  0xd1, 0x18, 0x0d, 0xd0, 0x00, 0x01, 1, 2, 3, 1
+};
+STATIC CONST UINT8 mUsbConfigDescriptor[32] = {
+  9, 0x02, 32, 0, 1, 1, 0, 0x80, 0x50,
+  9, 0x04, 0, 0, 2, 0xff, 0x42, 0x03, 4,
+  7, 0x05, USB_EP_IN, 2, 0x00, 0x02, 0,
+  7, 0x05, USB_EP_OUT, 2, 0x00, 0x02, 0
+};
+STATIC CONST UINT8 mUsbSuperSpeedConfigDescriptor[44] = {
+  9, 0x02, 44, 0, 1, 1, 0, 0x80, 0x10,
+  9, 0x04, 0, 0, 2, 0xff, 0x42, 0x03, 4,
+  7, 0x05, USB_EP_IN, 2, 0x00, 0x04, 0, 6, 0x30, 4, 0, 0, 0,
+  7, 0x05, USB_EP_OUT, 2, 0x00, 0x04, 0, 6, 0x30, 4, 0, 0, 0
+};
+STATIC CONST UINT8 mUsbDeviceQualifier[10] = {
+  10, 0x06, 0x00, 0x02, 0xff, 0xff, 0xff, 64, 1, 0
+};
+STATIC CONST UINT8 mUsbBos[42] = {
+  5, 0x0f, 42, 0, 3,
+  7, 0x10, 0x02, 0x06, 0, 0, 0,
+  10, 0x10, 0x03, 0x00, 0x0e, 0x00, 0x01, 0x07, 0x65, 0x00,
+  20, 0x10, 0x0a, 0x00, 0x01, 0, 0, 0, 0x00, 0x11, 0, 0, 0x30, 0x40, 0x0a, 0x00, 0xb0, 0x40, 0x0a, 0x00
+};
+STATIC CONST UINT8 mUsbString0[4] = { 4, 0x03, 0x09, 0x04 };
+STATIC CONST UINT8 mUsbStringManufacturer[8] = { 8, 0x03, 'X', 0, 'N', 0, 'U', 0 };
+STATIC CONST UINT8 mUsbStringProduct[20] = {
+  20, 0x03, 'x', 0, 'n', 0, 'u', 0, 'l', 0, 'o', 0, 'a', 0, 'd', 0, 'e', 0, 'r', 0
+};
+STATIC CONST UINT8 mUsbStringSerial[20] = {
+  20, 0x03, 'x', 0, 'n', 0, 'u', 0, 'l', 0, 'o', 0, 'a', 0, 'd', 0, 'e', 0, 'r', 0
+};
+STATIC CONST UINT8 mUsbStringInterface[18] = {
+  18, 0x03, 'f', 0, 'a', 0, 's', 0, 't', 0, 'b', 0, 'o', 0, 'o', 0, 't', 0
+};
+
+STATIC CONST VOID *mUsbConfigDescriptors[1] = { mUsbConfigDescriptor };
+STATIC CONST VOID *mUsbSuperSpeedConfigDescriptors[1] = { mUsbSuperSpeedConfigDescriptor };
+STATIC CONST VOID *mUsbStrings[5] = {
+  mUsbString0,
+  mUsbStringManufacturer,
+  mUsbStringProduct,
+  mUsbStringSerial,
+  mUsbStringInterface
+};
+
+STATIC QCOM_USB_DEVICE_DESCRIPTOR_SET mDescriptors = {
+  mUsbDeviceDescriptor,
+  mUsbConfigDescriptors,
+  mUsbSuperSpeedDeviceDescriptor,
+  mUsbSuperSpeedConfigDescriptors,
+  mUsbDeviceQualifier,
+  mUsbBos,
+  5,
+  mUsbStrings
+};
 
 typedef struct {
   UINT64  Magic;
@@ -177,12 +213,11 @@ STATIC EFI_GUID mQcomUsbInitGuid = QCOM_USB_INIT_EVENT_GUID;
 
 STATIC QCOM_USB_DEVICE_PROTOCOL *mUsb;
 STATIC EFI_EVENT                 mUsbInitEvent;
-STATIC volatile BOOLEAN          mUsbEvent;
+STATIC BOOLEAN                   mUsbConnected;
 STATIC BOOLEAN                   mUsbReading;
+STATIC UINTN                     mUsbQueuedLength;
 STATIC VOID                      *mUsbRx;
 STATIC VOID                      *mUsbTx;
-STATIC EFI_PHYSICAL_ADDRESS      mUsbRxDma;
-STATIC EFI_PHYSICAL_ADDRESS      mUsbTxDma;
 
 STATIC UINT64  mArgsAddress;
 STATIC UINT64  mEntryAddress;
@@ -213,81 +248,6 @@ UINT8           gFastbootSecondaryStack[0x4000] __attribute__ ((aligned (16)));
 
 extern VOID FastbootOtherCpuEntry (VOID);
 extern VOID FastbootOtherCpuReturnStub (VOID);
-
-STATIC
-VOID
-EFIAPI
-FastbootUsbEvent (
-  IN EFI_EVENT  Event,
-  IN VOID       *Context
-  )
-{
-  (VOID)Event;
-  (VOID)Context;
-  mUsbEvent = TRUE;
-}
-
-STATIC QCOM_USB_DEVICE_DESCRIPTOR_SET mDescriptors = {
-  .Device = {
-    .Length = sizeof (QCOM_USB_DEVICE_DESCRIPTOR),
-    .DescriptorType = 0x01,
-    .BcdUSB = 0x0200,
-    .DeviceClass = 0xFF,
-    .DeviceSubClass = 0x42,
-    .DeviceProtocol = 0x03,
-    .MaxPacketSize0 = 64,
-    .IdVendor = 0x18D1,
-    .IdProduct = 0xD00D,
-    .BcdDevice = 0x0100,
-    .StrManufacturer = 1,
-    .StrProduct = 2,
-    .StrSerialNumber = 3,
-    .NumConfigurations = 1,
-  },
-  .Config = {
-    .Length = sizeof (QCOM_USB_CONFIG_DESCRIPTOR),
-    .DescriptorType = 0x02,
-    .TotalLength = sizeof (QCOM_USB_CONFIG_DESCRIPTOR) + sizeof (QCOM_USB_INTERFACE_DESCRIPTOR) +
-                   sizeof (QCOM_USB_ENDPOINT_DESCRIPTOR) * 2,
-    .NumInterfaces = 1,
-    .ConfigurationValue = 1,
-    .Configuration = 0,
-    .Attributes = 0x80,
-    .MaxPower = 0x32,
-  },
-  .Interface = {
-    .Length = sizeof (QCOM_USB_INTERFACE_DESCRIPTOR),
-    .DescriptorType = 0x04,
-    .InterfaceNumber = 0,
-    .AlternateSetting = 0,
-    .NumEndpoints = 2,
-    .InterfaceClass = 0xFF,
-    .InterfaceSubClass = 0x42,
-    .InterfaceProtocol = 0x03,
-    .Interface = 0,
-  },
-  .EndpointIn = {
-    .Length = sizeof (QCOM_USB_ENDPOINT_DESCRIPTOR),
-    .DescriptorType = 0x05,
-    .EndpointAddress = 0x81,
-    .Attributes = 0x02,
-    .MaxPacketSize = 512,
-    .Interval = 0,
-  },
-  .EndpointOut = {
-    .Length = sizeof (QCOM_USB_ENDPOINT_DESCRIPTOR),
-    .DescriptorType = 0x05,
-    .EndpointAddress = 0x01,
-    .Attributes = 0x02,
-    .MaxPacketSize = 512,
-    .Interval = 0,
-  },
-  .String0 = { 4, 3, 0x09, 0x04 },
-  .String1 = { 8, 3, 'U', 0, 'n', 0, 'i', 0 },
-  .String2 = { 36, 3, 'Q', 0, 'u', 0, 'a', 0, 'l', 0, 'c', 0, 'o', 0, 'm', 0, 'm', 0, ' ', 0,
-               'F', 0, 'a', 0, 's', 0, 't', 0, 'b', 0, 'o', 0, 'o', 0, 't', 0 },
-  .String3 = { 16, 3, 'p', 0, 'e', 0, 'r', 0, 'i', 0, 'd', 0, 'o', 0, 't', 0 },
-};
 
 STATIC
 VOID
@@ -636,21 +596,37 @@ FastbootStageLogs (
 }
 
 STATIC
-VOID
-FastbootUsbPump (
-  VOID
+INTN
+FastbootUsbWait (
+  IN UINT8  Endpoint
   )
 {
-  UINTN Index;
+  UINT32                      Event;
+  UINT64                      Size;
+  QCOM_USB_DEVICE_EVENT_DATA  Data;
+  EFI_STATUS                  Status;
 
-  if (mUsb == NULL) {
-    return;
-  }
-  for (Index = 0; Index < 8; Index++) {
-    mUsb->HandleEvent (mUsb);
+  for (;;) {
+    Event = QCOM_USB_EVENT_NONE;
+    Size = 0;
+    ZeroMem (&Data, sizeof (Data));
+    Status = mUsb->HandleEvent (&Event, &Size, &Data);
+    if (EFI_ERROR (Status)) {
+      return -1;
+    }
+    if (Event == QCOM_USB_EVENT_DEVICE_STATE_CHANGE) {
+      mUsbConnected = (Data.DeviceState == QCOM_USB_STATE_CONNECTED);
+      return -1;
+    }
+    if ((Event == QCOM_USB_EVENT_TRANSFER_NOTIFICATION) &&
+        (Data.Transfer.EndpointIndex == Endpoint)) {
+      if (Data.Transfer.Status != QCOM_USB_TRANSFER_COMPLETE_OK) {
+        return -1;
+      }
+      return (INTN)Data.Transfer.BytesCompleted;
+    }
     gBS->Stall (100);
   }
-  mUsbEvent = FALSE;
 }
 
 STATIC
@@ -662,6 +638,7 @@ FastbootUsbTxRaw (
 {
   CONST UINT8  *Bytes;
   UINTN        Chunk;
+  INTN         Completed;
   EFI_STATUS   Status;
 
   if (mUsb == NULL) {
@@ -669,14 +646,18 @@ FastbootUsbTxRaw (
   }
   Bytes = Data;
   while (Length != 0) {
-    Chunk = MIN (Length, USB_CHUNK_SIZE);
+    Chunk = MIN (Length, USB_TRANSFER_SIZE);
     CopyMem (mUsbTx, Bytes, Chunk);
-    Status = mUsb->Send (mUsb, 0x81, mUsbTx, Chunk);
+    Status = mUsb->Send (USB_EP_IN, Chunk, mUsbTx);
     if (EFI_ERROR (Status)) {
       FastbootLog ("usb tx failed: %r\n", Status);
       return Status;
     }
-    FastbootUsbPump ();
+    Completed = FastbootUsbWait (USB_EP_IN);
+    if (Completed < 0) {
+      FastbootLog ("usb tx did not complete\n");
+      return EFI_DEVICE_ERROR;
+    }
     Bytes += Chunk;
     Length -= Chunk;
   }
@@ -731,32 +712,54 @@ STATIC
 EFI_STATUS
 FastbootUsbRead (
   IN  BOOLEAN  Blocking,
+  IN  UINTN    MaxLength,
   OUT UINTN    *Length
   )
 {
-  EFI_STATUS  Status;
+  UINT32                      Event;
+  UINT64                      Size;
+  QCOM_USB_DEVICE_EVENT_DATA  Data;
+  EFI_STATUS                  Status;
 
   if (mUsb == NULL) {
     return EFI_NOT_READY;
   }
+  if (MaxLength > USB_TRANSFER_SIZE) {
+    MaxLength = USB_TRANSFER_SIZE;
+  }
   if (!mUsbReading) {
-    ZeroMem (mUsbRx, USB_CHUNK_SIZE);
-    mUsbEvent = FALSE;
-    Status = mUsb->Send (mUsb, 0x01, mUsbRx, USB_CHUNK_SIZE);
+    ZeroMem (mUsbRx, MaxLength);
+    Status = mUsb->Send (USB_EP_OUT, MaxLength, mUsbRx);
     if (EFI_ERROR (Status)) {
+      FastbootLog ("usb rx queue failed: %r\n", Status);
       return Status;
     }
+    mUsbQueuedLength = MaxLength;
     mUsbReading = TRUE;
   }
   for (;;) {
-    mUsb->HandleEvent (mUsb);
-    if (mUsbEvent) {
-      mUsbEvent = FALSE;
-      if (mUsbReading) {
-        mUsbReading = FALSE;
-        *Length = USB_CHUNK_SIZE;
-        return EFI_SUCCESS;
+    Event = QCOM_USB_EVENT_NONE;
+    Size = 0;
+    ZeroMem (&Data, sizeof (Data));
+    Status = mUsb->HandleEvent (&Event, &Size, &Data);
+    if (EFI_ERROR (Status)) {
+      mUsbReading = FALSE;
+      return Status;
+    }
+    if (Event == QCOM_USB_EVENT_DEVICE_STATE_CHANGE) {
+      mUsbConnected = (Data.DeviceState == QCOM_USB_STATE_CONNECTED);
+      mUsbReading = FALSE;
+      return EFI_NOT_READY;
+    }
+    if ((Event == QCOM_USB_EVENT_TRANSFER_NOTIFICATION) &&
+        (Data.Transfer.EndpointIndex == USB_EP_OUT)) {
+      mUsbReading = FALSE;
+      if ((Data.Transfer.Status != QCOM_USB_TRANSFER_COMPLETE_OK) ||
+          (Data.Transfer.BytesCompleted == 0)) {
+        return EFI_DEVICE_ERROR;
       }
+      *Length = (UINTN)MIN (Data.Transfer.BytesCompleted, mUsbQueuedLength);
+      return EFI_SUCCESS;
     }
     if (!Blocking) {
       return EFI_NOT_READY;
@@ -852,7 +855,7 @@ FastbootDownload (
   FastbootUsbTxRaw (Header, HeaderLength);
   Remaining = Size;
   while (Remaining != 0) {
-    Status = FastbootUsbRead (TRUE, &Length);
+    Status = FastbootUsbRead (TRUE, USB_TRANSFER_SIZE, &Length);
     if (EFI_ERROR (Status)) {
       FastbootFail ("download read failed");
       return;
@@ -992,6 +995,18 @@ FastbootCommand (
 }
 
 STATIC
+VOID
+EFIAPI
+FastbootUsbInitNotify (
+  IN EFI_EVENT  Event,
+  IN VOID       *Context
+  )
+{
+  (VOID)Event;
+  (VOID)Context;
+}
+
+STATIC
 EFI_STATUS
 FastbootUsbInit (
   VOID
@@ -999,40 +1014,47 @@ FastbootUsbInit (
 {
   EFI_STATUS  Status;
 
+  mUsb = NULL;
+  mUsbConnected = FALSE;
+  mUsbReading = FALSE;
+  Status = gBS->CreateEventEx (
+                  EVT_NOTIFY_SIGNAL,
+                  TPL_CALLBACK,
+                  FastbootUsbInitNotify,
+                  NULL,
+                  &mQcomUsbInitGuid,
+                  &mUsbInitEvent
+                  );
+  if (!EFI_ERROR (Status)) {
+    gBS->SignalEvent (mUsbInitEvent);
+    gBS->CloseEvent (mUsbInitEvent);
+    mUsbInitEvent = NULL;
+  } else {
+    FastbootLog ("USB init event failed: %r\n", Status);
+  }
   Status = gBS->LocateProtocol (&mQcomUsbGuid, NULL, (VOID **)&mUsb);
   if (EFI_ERROR (Status)) {
     FastbootLog ("Qcom USB protocol unavailable: %r\n", Status);
     return Status;
   }
-  Status = gBS->CreateEventEx (
-                  EVT_NOTIFY_SIGNAL,
-                  TPL_CALLBACK,
-                  (EFI_EVENT_NOTIFY)FastbootUsbEvent,
-                  NULL,
-                  &mQcomUsbInitGuid,
-                  &mUsbInitEvent
-                  );
-  if (EFI_ERROR (Status)) {
-    FastbootLog ("USB init event failed: %r\n", Status);
-    return Status;
-  }
-  gBS->SignalEvent (mUsbInitEvent);
-  Status = mUsb->StartEx (mUsb, &mDescriptors);
+  Status = mUsb->StartEx (&mDescriptors);
   if (EFI_ERROR (Status)) {
     FastbootLog ("USB start_ex failed: %r\n", Status);
     return Status;
   }
-  Status = mUsb->AllocateTransferBuffer (mUsb, USB_CHUNK_SIZE, &mUsbRx, &mUsbRxDma);
+  Status = mUsb->AllocateTransferBuffer (USB_TRANSFER_SIZE, &mUsbRx);
   if (EFI_ERROR (Status)) {
     FastbootLog ("USB rx buffer failed: %r\n", Status);
     return Status;
   }
-  Status = mUsb->AllocateTransferBuffer (mUsb, USB_CHUNK_SIZE, &mUsbTx, &mUsbTxDma);
+  Status = mUsb->AllocateTransferBuffer (USB_TRANSFER_SIZE, &mUsbTx);
   if (EFI_ERROR (Status)) {
     FastbootLog ("USB tx buffer failed: %r\n", Status);
     return Status;
   }
-  FastbootLog ("USB fastboot ready (rx 0x%lx tx 0x%lx)\n", mUsbRxDma, mUsbTxDma);
+  mUsbConnected = TRUE;
+  FastbootLog ("USB fastboot ready (rx 0x%lx tx 0x%lx)\n",
+               (UINT64)(UINTN)mUsbRx, (UINT64)(UINTN)mUsbTx);
   return EFI_SUCCESS;
 }
 
@@ -1085,7 +1107,7 @@ DarwinFastbootMode (
   FastbootPatchKernel (0, FALSE);
   for (;;) {
     FastbootUpdateContext ();
-    Status = FastbootUsbRead (mBusy ? FALSE : TRUE, &Length);
+    Status = FastbootUsbRead (mBusy ? FALSE : TRUE, USB_CHUNK_SIZE, &Length);
     if (Status == EFI_SUCCESS) {
       Index = 0;
       while ((Index < Length) &&
