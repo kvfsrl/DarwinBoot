@@ -44,6 +44,13 @@ VOID EFIAPI DarwinEnter (UINT64 Args, UINT64 Entry, UINT64 Memory, UINT64 Size, 
 
 #define READ_SYSREG(Name)  ({ UINT64 Value_; __asm__ volatile ("mrs %0, " #Name : "=r" (Value_)); Value_; })
 
+#define DARWIN_PRINT(...) \
+  do { \
+    if (gST->ConOut != NULL) { \
+      Print (__VA_ARGS__); \
+    } \
+  } while (FALSE)
+
 STATIC UINT32 U32 (CONST VOID *P) { return ReadUnaligned32 ((CONST UINT32 *)P); }
 STATIC UINT64 U64 (CONST VOID *P) { return ReadUnaligned64 ((CONST UINT64 *)P); }
 
@@ -93,7 +100,7 @@ ReadFile (
   Status = File->GetInfo (File, &gEfiFileInfoGuid, &InfoSize, Info);
   if (EFI_ERROR (Status)) { goto Done; }
   if ((Info->Attribute & EFI_FILE_DIRECTORY) || (Info->FileSize == 0) || (Info->FileSize > Limit)) {
-    Print (L"DARWINBOOT: %s attr %lx size %lu limit %lu\n", Path, (UINT64)Info->Attribute, (UINT64)Info->FileSize, (UINT64)Limit);
+    DARWIN_PRINT (L"DARWINBOOT: %s attr %lx size %lu limit %lu\n", Path, (UINT64)Info->Attribute, (UINT64)Info->FileSize, (UINT64)Limit);
     Status = EFI_BAD_BUFFER_SIZE;
     goto Done;
   }
@@ -631,18 +638,18 @@ Boot (
   if ((Request == NULL) || (Request->Volume == NULL) || (Request->KernelPath == NULL)) { return EFI_INVALID_PARAMETER; }
   if ((Request->KextCount != 0) || (Request->DeviceTree != NULL) || (Request->DeviceTreeSize != 0) ||
       (DarwinCurrentEl () != 4)) {
-    Print (L"DARWINBOOT: unsupported inputs or exception level; firmware retained\n");
+    DARWIN_PRINT (L"DARWINBOOT: unsupported inputs or exception level; firmware retained\n");
     return EFI_UNSUPPORTED;
   }
   if (!RamdiskLayout (Request->Ramdisk, Request->RamdiskSize, &RamdiskExpandedSize, &RamdiskPacked)) {
-    Print (L"DARWINBOOT: ramdisk layout rejected, %lu bytes\n", (UINT64)Request->RamdiskSize);
+    DARWIN_PRINT (L"DARWINBOOT: ramdisk layout rejected, %lu bytes\n", (UINT64)Request->RamdiskSize);
     return EFI_BAD_BUFFER_SIZE;
   }
   ZeroMem (CommandLine, sizeof (CommandLine));
   if (Request->BootArgs != NULL) {
     for (Index = 0; Request->BootArgs[Index] != 0; Index++) {
       if ((Index >= sizeof (CommandLine) - 1) || (Request->BootArgs[Index] > 0x7f)) {
-        Print (L"DARWINBOOT: boot args rejected at %lu\n", (UINT64)Index);
+        DARWIN_PRINT (L"DARWINBOOT: boot args rejected at %lu\n", (UINT64)Index);
         return EFI_BAD_BUFFER_SIZE;
       }
       CommandLine[Index] = (CHAR8)Request->BootArgs[Index];
@@ -757,7 +764,7 @@ Boot (
   PolicyAddress = ALIGN_VALUE (AddonAddress + AddonSize, SIZE_16KB);
   Used = ALIGN_VALUE (PolicyAddress + PolicySize, SIZE_16KB) - Address;
   if (Used > WindowSize - BLOCK_SIZE) {
-    Print (L"DARWINBOOT: used %lu window %lu kernel %lu ramdisk %lu\n", (UINT64)Used, (UINT64)WindowSize, (UINT64)(Kernel.End - Kernel.Base), (UINT64)RamdiskBytes);
+    DARWIN_PRINT (L"DARWINBOOT: used %lu window %lu kernel %lu ramdisk %lu\n", (UINT64)Used, (UINT64)WindowSize, (UINT64)(Kernel.End - Kernel.Base), (UINT64)RamdiskBytes);
     Status = EFI_BAD_BUFFER_SIZE;
     goto Fail;
   }
@@ -823,12 +830,12 @@ Boot (
   }
   Status = GetMap (&Map, &Capacity, &MapSize, &Key, &Stride);
   if (EFI_ERROR (Status)) { goto Fail; }
-  Print (L"DARWINBOOT: ARM64 va=0x%lx pa=0x%lx args=0x%lx entry=0x%lx owned=0x%lx\n",
+  DARWIN_PRINT (L"DARWINBOOT: ARM64 va=0x%lx pa=0x%lx args=0x%lx entry=0x%lx owned=0x%lx\n",
          Kernel.Base, Address, ArgsAddress, Address + Kernel.Entry - Kernel.Base, (UINT64)WindowSize);
-  Print (L"DARWINBOOT: video base=0x%lx display=%lu row=%lu width=%lu height=%lu depth=%lu\n",
+  DARWIN_PRINT (L"DARWINBOOT: video base=0x%lx display=%lu row=%lu width=%lu height=%lu depth=%lu\n",
          Video[0], Video[1], Video[2], Video[3], Video[4], Video[5]);
-  Print (L"DARWINBOOT: command line: %a\n", CommandLine);
-  Print (L"DARWINBOOT: inputs validated; exiting boot services\n");
+  DARWIN_PRINT (L"DARWINBOOT: command line: %a\n", CommandLine);
+  DARWIN_PRINT (L"DARWINBOOT: inputs validated; exiting boot services\n");
 
   //
   // The same facts in large type over the whole screen. The firmware's log
@@ -876,7 +883,7 @@ Fail:
   if (TreePath != NULL) { FreePool (TreePath); }
   if (Map != NULL) { FreePool (Map); }
   if (Address != 0) { gBS->FreePages (Address, EFI_SIZE_TO_PAGES (WindowSize)); }
-  Print (L"DARWINBOOT: boot refused: %r; firmware retained\n", Status);
+  DARWIN_PRINT (L"DARWINBOOT: boot refused: %r; firmware retained\n", Status);
   return Status;
 }
 
@@ -907,7 +914,7 @@ DarwinBootEntry (EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable)
   Status = gBS->InstallMultipleProtocolInterfaces (&ImageHandle, &gUniXNULoaderProtocolGuid, &mLoader, NULL);
   if (!EFI_ERROR (Status)) {
     Loaded->Unload = Unload;
-    Print (L"DARWINBOOT: loader v2 installed EL%u\n", (UINT32)(DarwinCurrentEl () >> 2));
+    DARWIN_PRINT (L"DARWINBOOT: loader v2 installed EL%u\n", (UINT32)(DarwinCurrentEl () >> 2));
   }
   return Status;
 }

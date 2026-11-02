@@ -1071,7 +1071,9 @@ DarwinFastbootMode (
   if (!FastbootContains (Args->CommandLine, "cpus=")) {
     AsciiStrnCatS (Args->CommandLine, sizeof (Args->CommandLine), " cpus=1", 7);
   }
-  Print (L"DARWINBOOT: fastboot mode; resident UEFI, secondary-core XNU\n");
+  if (gST->ConOut != NULL) {
+    Print (L"DARWINBOOT: fastboot mode; resident UEFI, secondary-core XNU\n");
+  }
   FastbootLog ("fastboot mode args=0x%lx entry=0x%lx kernel=0x%lx+0x%lx slide=0x%lx\n",
                ArgsAddress, EntryAddress, KernelBase, KernelSize, mKernelSlide);
   FastbootLog ("command line: %a\n", Args->CommandLine);
